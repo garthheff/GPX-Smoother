@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPX Smoother</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121931;
+      --panel-2: #18213f;
+      --text: #eef2ff;
+      --muted: #b5bfdc;
+      --accent: #7aa2ff;
+      --border: rgba(255,255,255,0.08);
+      --shadow: 0 10px 30px rgba(0,0,0,0.25);
+      --radius: 18px;
+      --warn: #ffcf70;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, Arial, sans-serif;
+      background: linear-gradient(180deg, #09101e 0%, #0b1020 100%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+    }
+    p {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .controls,
+    .panel {
+      background: rgba(18, 25, 49, 0.92);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .controls {
+      padding: 18px;
+      margin-bottom: 18px;
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+      align-items: end;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .field label {
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+    .field input[type="file"],
+    .field input[type="range"],
+    .field input[type="color"],
+    .field button {
+      width: 100%;
+    }
+    input[type="file"], input[type="color"] {
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+    }
+    input[type="range"] {
+      accent-color: var(--accent);
+    }
+    input[type="color"] {
+      height: 44px;
+      padding: 4px;
+    }
+    button {
+      appearance: none;
+      border: 0;
+      padding: 12px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+    }
+    button.secondary { background: #2c3556; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .span-4 { grid-column: span 4; }
+    .span-3 { grid-column: span 3; }
+    .span-2 { grid-column: span 2; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .panel { overflow: hidden; }
+    .panel-header {
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .panel-header h2 {
+      margin: 0;
+      font-size: 1.15rem;
+    }
+    .panel-body { padding: 16px 18px 18px; }
+    .map {
+      height: 420px;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .stats {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .stat {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .stat .label {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    .stat .value {
+      font-size: 1.3rem;
+      font-weight: 700;
+    }
+    .chart-wrap {
+      height: 320px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 10px;
+    }
+    .log-list {
+      max-height: 320px;
+      overflow: auto;
+      padding: 0;
+    }
+    .log-entry {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }
+    .log-entry strong { color: var(--warn); }
+    .muted {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .span-4, .span-3, .span-2 { grid-column: span 12; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>GPX Smoother</h1>
+    <p>Upload a GPX, compare the original and cleaned track side by side, then download the cleaned file. Everything runs locally in your browser, so it works on GitHub Pages.</p>
+
+    <div class="controls">
+      <div class="field span-4">
+        <label for="gpxFile">GPX file</label>
+        <input id="gpxFile" type="file" accept=".gpx" />
+      </div>
+
+      <div class="field span-2">
+        <label for="distanceScale">Distance smoothing: <strong id="distanceScaleValue">7</strong></label>
+        <input id="distanceScale" type="range" min="0" max="10" step="1" value="7" />
+      </div>
+
+      <div class="field span-2">
+        <label for="elevationScale">Elevation smoothing: <strong id="elevationScaleValue">8</strong></label>
+        <input id="elevationScale" type="range" min="0" max="10" step="1" value="8" />
+      </div>
+
+      <div class="field span-2">
+        <label for="originalColor">Original line color</label>
+        <input id="originalColor" type="color" value="#0072B2" />
+      </div>
+
+      <div class="field span-2">
+        <label for="fixedColor">Fixed line color</label>
+        <input id="fixedColor" type="color" value="#117733" />
+      </div>
+
+      <div class="field span-2">
+        <button id="downloadBtn" disabled>Download fixed GPX</button>
+      </div>
+
+      <div class="field span-2">
+        <button id="resetBtn" class="secondary">Reset view</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Original upload</h2>
+          <div class="muted" id="originalName">No file loaded</div>
+        </div>
+        <div class="panel-body">
+          <div id="originalMap" class="map"></div>
+          <div class="stats" id="originalStats"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Fixed output</h2>
+          <div class="muted" id="fixedName">Waiting for GPX</div>
+        </div>
+        <div class="panel-body">
+          <div id="fixedMap" class="map"></div>
+          <div class="stats" id="fixedStats"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:18px; overflow:hidden;">
+      <div class="panel-header">
+        <h2>Combined elevation chart</h2>
+        <div class="muted">Original and fixed overlay</div>
+      </div>
+      <div class="panel-body">
+        <div class="chart-wrap">
+          <canvas id="combinedChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:18px; overflow:hidden;">
+      <div class="panel-header">
+        <h2>Fix log</h2>
+        <div class="muted" id="logMeta">Only changed points are listed.</div>
+      </div>
+      <div class="panel-body">
+        <div class="log-list" id="logList">
+          <div class="log-entry">Upload a GPX to inspect changed points.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const distanceScaleInput = document.getElementById('distanceScale');
+    const elevationScaleInput = document.getElementById('elevationScale');
+    const distanceScaleValue = document.getElementById('distanceScaleValue');
+    const elevationScaleValue = document.getElementById('elevationScaleValue');
+    const originalColorInput = document.getElementById('originalColor');
+    const fixedColorInput = document.getElementById('fixedColor');
+    const fileInput = document.getElementById('gpxFile');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const originalName = document.getElementById('originalName');
+    const fixedName = document.getElementById('fixedName');
+    const logList = document.getElementById('logList');
+    const logMeta = document.getElementById('logMeta');
+
+    let originalMap;
+    let fixedMap;
+    let originalLayer = null;
+    let fixedLayer = null;
+    let originalMarker = null;
+    let fixedMarker = null;
+    let combinedChart = null;
+    let currentState = null;
+
+    function makeMap(id) {
+      const map = L.map(id, { preferCanvas: true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      return map;
+    }
+
+    function initMaps() {
+      originalMap = makeMap('originalMap');
+      fixedMap = makeMap('fixedMap');
+      setTimeout(() => {
+        originalMap.invalidateSize();
+        fixedMap.invalidateSize();
+      }, 100);
+    }
+
+    function clampScale(v) {
+      return Math.max(0, Math.min(10, Number(v) || 0));
+    }
+
+    function makeOdd(v) {
+      let n = Math.round(v);
+      if (n < 1) n = 1;
+      if (n % 2 === 0) n += 1;
+      return n;
+    }
+
+    function distanceWindows(scale) {
+      const s = clampScale(scale);
+      if (s === 0) return { latlonMean: 1 };
+      return { latlonMean: makeOdd(3 + s) };
+    }
+
+    function elevationWindows(scale) {
+      const s = clampScale(scale);
+      if (s === 0) return { eleMedian: 1, eleMean: 1 };
+      return {
+        eleMedian: makeOdd(9 + s * 3),
+        eleMean: makeOdd(5 + s * 2)
+      };
+    }
+
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const r = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const p1 = toRad(lat1);
+      const p2 = toRad(lat2);
+      const dp = toRad(lat2 - lat1);
+      const dl = toRad(lon2 - lon1);
+      const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+      return 2 * r * Math.asin(Math.sqrt(a));
+    }
+
+    function rollingMean(arr, window) {
+      if (window <= 1) return arr.slice();
+      const half = Math.floor(window / 2);
+      const out = new Array(arr.length);
+      for (let i = 0; i < arr.length; i++) {
+        let sum = 0;
+        let count = 0;
+        const start = Math.max(0, i - half);
+        const end = Math.min(arr.length - 1, i + half);
+        for (let j = start; j <= end; j++) {
+          const v = arr[j];
+          if (Number.isFinite(v)) {
+            sum += v;
+            count += 1;
+          }
+        }
+        out[i] = count ? sum / count : arr[i];
+      }
+      return out;
+    }
+
+    function rollingMedian(arr, window) {
+      if (window <= 1) return arr.slice();
+      const half = Math.floor(window / 2);
+      const out = new Array(arr.length);
+      for (let i = 0; i < arr.length; i++) {
+        const vals = [];
+        const start = Math.max(0, i - half);
+        const end = Math.min(arr.length - 1, i + half);
+        for (let j = start; j <= end; j++) {
+          const v = arr[j];
+          if (Number.isFinite(v)) vals.push(v);
+        }
+        vals.sort((a, b) => a - b);
+        if (!vals.length) {
+          out[i] = arr[i];
+        } else {
+          const mid = Math.floor(vals.length / 2);
+          out[i] = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+        }
+      }
+      return out;
+    }
+
+    function addMetrics(points) {
+      let cumDistance = 0;
+      let gain = 0;
+      let loss = 0;
+      const profile = [];
+      for (let i = 0; i < points.length; i++) {
+        if (i > 0) {
+          const d = haversineMeters(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
+          cumDistance += d;
+          const prevEle = Number.isFinite(points[i - 1].ele) ? points[i - 1].ele : 0;
+          const curEle = Number.isFinite(points[i].ele) ? points[i].ele : 0;
+          const de = curEle - prevEle;
+          if (de > 0) gain += de;
+          if (de < 0) loss += Math.abs(de);
+        }
+        profile.push({
+          index: i,
+          distanceKm: cumDistance / 1000,
+          ele: points[i].ele,
+          lat: points[i].lat,
+          lon: points[i].lon
+        });
+      }
+      return { distanceKm: cumDistance / 1000, gainM: gain, lossM: loss, profile };
+    }
+
+    function smoothTrack(points, distanceScale, elevationScale) {
+      const dcfg = distanceWindows(distanceScale);
+      const ecfg = elevationWindows(elevationScale);
+      const lats = points.map(p => p.lat);
+      const lons = points.map(p => p.lon);
+      const eles = points.map(p => p.ele);
+      const latOut = dcfg.latlonMean <= 1 ? lats.slice() : rollingMean(lats, dcfg.latlonMean);
+      const lonOut = dcfg.latlonMean <= 1 ? lons.slice() : rollingMean(lons, dcfg.latlonMean);
+      const eleMed = ecfg.eleMedian <= 1 ? eles.slice() : rollingMedian(eles, ecfg.eleMedian);
+      const eleOut = ecfg.eleMean <= 1 ? eleMed.slice() : rollingMean(eleMed, ecfg.eleMean);
+
+      const cleaned = points.map((p, i) => ({ ...p, lat: latOut[i], lon: lonOut[i], ele: eleOut[i] }));
+      const changeLog = [];
+      for (let i = 0; i < points.length; i++) {
+        const entry = [];
+        const p0 = points[i];
+        const p1 = cleaned[i];
+        if (distanceScale > 0) {
+          const latDiff = Math.abs(p1.lat - p0.lat);
+          const lonDiff = Math.abs(p1.lon - p0.lon);
+          if (latDiff > 1e-10 || lonDiff > 1e-10) {
+            entry.push({
+              type: 'distance',
+              reason: `distance smoothing window ${dcfg.latlonMean}`,
+              before: `${p0.lat.toFixed(6)}, ${p0.lon.toFixed(6)}`,
+              after: `${p1.lat.toFixed(6)}, ${p1.lon.toFixed(6)}`
+            });
+          }
+        }
+        if (elevationScale > 0) {
+          const eleDiff = Math.abs((p1.ele ?? 0) - (p0.ele ?? 0));
+          if (eleDiff > 0.01) {
+            entry.push({
+              type: 'elevation',
+              reason: `median ${ecfg.eleMedian}, mean ${ecfg.eleMean}`,
+              before: `${(p0.ele ?? 0).toFixed(2)} m`,
+              after: `${(p1.ele ?? 0).toFixed(2)} m`
+            });
+          }
+        }
+        if (entry.length) changeLog.push({ index: i, changes: entry });
+      }
+      return { cleaned, dcfg, ecfg, changeLog };
+    }
+
+    function parseGpx(text) {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(text, 'application/xml');
+      const errorNode = xml.querySelector('parsererror');
+      if (errorNode) throw new Error('Invalid GPX XML');
+      const trkpts = Array.from(xml.getElementsByTagNameNS('*', 'trkpt'));
+      if (!trkpts.length) throw new Error('No usable track points found in GPX');
+      const points = trkpts.map((pt, idx) => {
+        const lat = Number(pt.getAttribute('lat'));
+        const lon = Number(pt.getAttribute('lon'));
+        const eleNode = Array.from(pt.children).find(n => n.localName === 'ele');
+        const timeNode = Array.from(pt.children).find(n => n.localName === 'time');
+        return {
+          index: idx,
+          lat,
+          lon,
+          ele: eleNode ? Number(eleNode.textContent) : NaN,
+          time: timeNode ? timeNode.textContent : null,
+          node: pt
+        };
+      }).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+      if (!points.length) throw new Error('No usable track points found in GPX');
+      return { xml, points };
+    }
+
+    function formatNumber(v, digits = 2) {
+      return Number(v).toFixed(digits);
+    }
+
+    function renderStats(target, metrics, extra = []) {
+      const items = [
+        { label: 'Distance', value: `${formatNumber(metrics.distanceKm, 2)} km` },
+        { label: 'Elevation gain', value: `${Math.round(metrics.gainM)} m` },
+        { label: 'Elevation loss', value: `${Math.round(metrics.lossM)} m` },
+        { label: 'Track points', value: `${metrics.profile.length}` },
+        ...extra
+      ];
+      target.innerHTML = items.map(item => `<div class="stat"><div class="label">${item.label}</div><div class="value">${item.value}</div></div>`).join('');
+    }
+
+    function drawTrack(map, oldLayer, points, color) {
+      if (oldLayer) map.removeLayer(oldLayer);
+      const latlngs = points.map(p => [p.lat, p.lon]);
+      const layer = L.polyline(latlngs, { color, weight: 4, opacity: 0.9 }).addTo(map);
+      map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+      return layer;
+    }
+
+    function syncMarker(map, markerRef, point, label) {
+      if (!point) return markerRef;
+      const latlng = [point.lat, point.lon];
+      if (!markerRef) {
+        markerRef = L.circleMarker(latlng, {
+          radius: 6,
+          weight: 2,
+          color: '#ffffff',
+          fillColor: '#ff8c42',
+          fillOpacity: 0.95
+        }).addTo(map);
+      } else {
+        markerRef.setLatLng(latlng);
+      }
+      markerRef.bindTooltip(label, { direction: 'top', offset: [0, -8] });
+      return markerRef;
+    }
+
+    function createCombinedChart(originalMetrics, cleanedMetrics, onHover) {
+      const ctx = document.getElementById('combinedChart');
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'Original elevation',
+              data: originalMetrics.profile.map(p => ({ x: p.distanceKm, y: p.ele })),
+              borderColor: originalColorInput.value,
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              pointRadius: 0,
+              borderWidth: 2,
+              tension: 0.15
+            },
+            {
+              label: 'Fixed elevation',
+              data: cleanedMetrics.profile.map(p => ({ x: p.distanceKm, y: p.ele })),
+              borderColor: fixedColorInput.value,
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              pointRadius: 0,
+              borderWidth: 2.5,
+              tension: 0.15
+            }
+          ]
+        },
+        options: {
+          parsing: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'nearest', intersect: false },
+          plugins: {
+            legend: { display: true, labels: { color: '#b5bfdc' } },
+            tooltip: {
+              callbacks: {
+                title: items => `${Number(items[0].parsed.x).toFixed(2)} km`,
+                label: item => `${item.dataset.label}: ${Number(item.parsed.y).toFixed(0)} m`
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              ticks: { color: '#b5bfdc', maxTicksLimit: 8 },
+              grid: { color: 'rgba(255,255,255,0.06)' },
+              title: { display: true, text: 'Distance km', color: '#b5bfdc' }
+            },
+            y: {
+              ticks: { color: '#b5bfdc' },
+              grid: { color: 'rgba(255,255,255,0.06)' },
+              title: { display: true, text: 'Elevation m', color: '#b5bfdc' }
+            }
+          },
+          onHover: (_, elements) => {
+            if (!elements.length) return;
+            onHover(elements[0].index);
+          }
+        }
+      });
+    }
+
+    function updateCharts(originalMetrics, cleanedMetrics) {
+      if (combinedChart) combinedChart.destroy();
+      combinedChart = createCombinedChart(originalMetrics, cleanedMetrics, index => {
+        const originalPoint = originalMetrics.profile[index];
+        const fixedPoint = cleanedMetrics.profile[index];
+        originalMarker = syncMarker(originalMap, originalMarker, originalPoint, `Original ${originalPoint.distanceKm.toFixed(2)} km`);
+        fixedMarker = syncMarker(fixedMap, fixedMarker, fixedPoint, `Fixed ${fixedPoint.distanceKm.toFixed(2)} km`);
+      });
+    }
+
+    function buildFixedGpx(originalXml, cleanedPoints) {
+      const clone = originalXml.cloneNode(true);
+      const trkpts = Array.from(clone.getElementsByTagNameNS('*', 'trkpt'));
+      if (trkpts.length !== cleanedPoints.length) throw new Error('Track point count mismatch while creating fixed GPX');
+      cleanedPoints.forEach((p, i) => {
+        const pt = trkpts[i];
+        pt.setAttribute('lat', p.lat.toFixed(8));
+        pt.setAttribute('lon', p.lon.toFixed(8));
+        let eleNode = Array.from(pt.children).find(n => n.localName === 'ele');
+        if (!eleNode) {
+          eleNode = clone.createElementNS(pt.namespaceURI, 'ele');
+          pt.appendChild(eleNode);
+        }
+        eleNode.textContent = Number.isFinite(p.ele) ? p.ele.toFixed(2) : '';
+      });
+      return new XMLSerializer().serializeToString(clone);
+    }
+
+    function downloadText(filename, text, mimeType) {
+      const blob = new Blob([text], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function buildFixedName(name) {
+      const idx = name.lastIndexOf('.');
+      if (idx === -1) return `${name}_fixed.gpx`;
+      return `${name.slice(0, idx)}_fixed${name.slice(idx)}`;
+    }
+
+    function renderLog(changeLog) {
+      if (!changeLog.length) {
+        logMeta.textContent = 'No points changed with the current scale settings.';
+        logList.innerHTML = '<div class="log-entry">No fixes were applied.</div>';
+        return;
+      }
+      logMeta.textContent = `${changeLog.length} changed point entries.`;
+      logList.innerHTML = changeLog.map(entry => {
+        const changeText = entry.changes.map(change => `<div><strong>${change.type}</strong> | ${change.reason} | ${change.before} → ${change.after}</div>`).join('');
+        return `<div class="log-entry"><div><strong>Point ${entry.index}</strong></div>${changeText}</div>`;
+      }).join('');
+    }
+
+    function renderAll(state) {
+      const originalMetrics = addMetrics(state.originalPoints);
+      const { cleaned, dcfg, ecfg, changeLog } = smoothTrack(state.originalPoints, state.distanceScale, state.elevationScale);
+      const cleanedMetrics = addMetrics(cleaned);
+      originalLayer = drawTrack(originalMap, originalLayer, state.originalPoints, originalColorInput.value);
+      fixedLayer = drawTrack(fixedMap, fixedLayer, cleaned, fixedColorInput.value);
+      renderStats(document.getElementById('originalStats'), originalMetrics);
+      renderStats(document.getElementById('fixedStats'), cleanedMetrics, [
+        { label: 'Distance window', value: `${dcfg.latlonMean}` },
+        { label: 'Elevation windows', value: `${ecfg.eleMedian} / ${ecfg.eleMean}` }
+      ]);
+      updateCharts(originalMetrics, cleanedMetrics);
+      renderLog(changeLog);
+      fixedName.textContent = buildFixedName(state.fileName);
+      downloadBtn.disabled = false;
+      currentState = { ...state, cleanedPoints: cleaned, cleanedXmlText: buildFixedGpx(state.xml, cleaned) };
+    }
+
+    distanceScaleInput.addEventListener('input', () => {
+      distanceScaleValue.textContent = distanceScaleInput.value;
+      if (currentState?.originalPoints) renderAll({ ...currentState, distanceScale: clampScale(distanceScaleInput.value), elevationScale: clampScale(elevationScaleInput.value) });
+    });
+
+    elevationScaleInput.addEventListener('input', () => {
+      elevationScaleValue.textContent = elevationScaleInput.value;
+      if (currentState?.originalPoints) renderAll({ ...currentState, distanceScale: clampScale(distanceScaleInput.value), elevationScale: clampScale(elevationScaleInput.value) });
+    });
+
+    originalColorInput.addEventListener('input', () => {
+      if (currentState?.originalPoints) renderAll(currentState);
+    });
+
+    fixedColorInput.addEventListener('input', () => {
+      if (currentState?.originalPoints) renderAll(currentState);
+    });
+
+    fileInput.addEventListener('change', async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const { xml, points } = parseGpx(text);
+        originalName.textContent = file.name;
+        renderAll({
+          fileName: file.name,
+          xml,
+          originalPoints: points,
+          distanceScale: clampScale(distanceScaleInput.value),
+          elevationScale: clampScale(elevationScaleInput.value)
+        });
+      } catch (err) {
+        logMeta.textContent = 'Load error';
+        logList.innerHTML = `<div class="log-entry">${err.message}</div>`;
+        downloadBtn.disabled = true;
+      }
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      if (!currentState?.cleanedXmlText) return;
+      downloadText(buildFixedName(currentState.fileName), currentState.cleanedXmlText, 'application/gpx+xml');
+    });
+
+    resetBtn.addEventListener('click', () => {
+      if (originalLayer) originalMap.fitBounds(originalLayer.getBounds(), { padding: [20, 20] });
+      if (fixedLayer) fixedMap.fitBounds(fixedLayer.getBounds(), { padding: [20, 20] });
+    });
+
+    initMaps();
+  </script>
+</body>
+</html>
