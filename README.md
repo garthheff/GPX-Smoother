@@ -1,8 +1,8 @@
-# GPS Smoother
+# GPX Smoother
 A simple browser-based tool to clean noisy GPX distance and elevation data. 
 
 # Link
-https://garthheff.github.io/GPS-Smoother/
+https://garthheff.github.io/GPX-Smoother/
 
 # Why
 My raw GPX files showed inflated distance and elevation, while Garmin and Strava displayed corrected values.
